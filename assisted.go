@@ -216,6 +216,9 @@ func (p *Provider) assist(b []byte) (string, time.Time, error) {
 	}
 	auth := p.authority.Load()
 	h := p.host
+	if !h.accepting() {
+		return "", deadline, errors.New("host is not accepting players")
+	}
 	if !p.assisting() || auth == nil || p.closing.Load() || j.InstanceID != auth.instanceID || j.Generation != auth.generation ||
 		j.Incarnation != h.incarnation || j.KeyID != auth.keyID || !strings.EqualFold(j.HostFingerprint, h.fingerprint) {
 		return "", deadline, errors.New("assisted join does not match the host")

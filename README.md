@@ -47,6 +47,9 @@ players must reach it through a forwarded port instead.
   They never reach the Listener.
 - `GameOutcomes` reports that the application calls `GameJoined` and `GameRejected`.
 
+`Pause` and `Resume` stop and resume admitting players without closing established
+connections.
+
 `RotateAdmissionKey`, `RotateMachineKey`, `Deregister` and `ExtensionRequest` expose
 the remaining operations. Registrations are recovered in a new generation after a
 restart, or when the provider fences the current one.

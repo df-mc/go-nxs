@@ -77,7 +77,14 @@ func (p *Provider) diagnosticPolicy(now, lease time.Time) *diagnosticPolicy {
 	return pol
 }
 
-func (h *host) setDiagnostics(pol *diagnosticPolicy) { h.diagnostics.Store(pol) }
+// setDiagnostics installs pol. A heartbeat racing Pause cannot install a policy.
+func (h *host) setDiagnostics(pol *diagnosticPolicy) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if pol == nil || h.open() {
+		h.diagnostics.Store(pol)
+	}
+}
 
 // diagnosticsActive reports whether a diagnostic policy is installed.
 func (h *host) diagnosticsActive() bool {

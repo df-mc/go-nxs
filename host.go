@@ -72,6 +72,10 @@ type host struct {
 	maxPending  int
 	maxSessions int
 	diag        diagnosticGate
+	// paused stops new reservations until resumed.
+	paused bool
+	// stopped stops new reservations for good.
+	stopped bool
 }
 
 // attempt is a reserved admission.
@@ -167,6 +171,37 @@ func (h *host) clearListener(l admitter) {
 
 func (h *host) hasListener() bool { return h.listener.Load() != nil }
 
+// pause stops new reservations and removes the diagnostic policy.
+func (h *host) pause() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.paused = true
+	h.diagnostics.Store(nil)
+}
+
+// stop stops new reservations for good and removes the diagnostic policy.
+func (h *host) stop() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.stopped = true
+	h.diagnostics.Store(nil)
+}
+
+func (h *host) resume() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.paused = false
+}
+
+func (h *host) accepting() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.open()
+}
+
+// open reports whether new reservations are allowed. h.mu must be held.
+func (h *host) open() bool { return !h.paused && !h.stopped }
+
 func (h *host) sessionCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -256,7 +291,7 @@ func (h *host) reserve(token string, addr netip.AddrPort, expiry time.Time, firs
 		// Either a retransmission of a pending attempt or a replay.
 		return nil, false
 	}
-	if _, ok := h.tuples[addr]; ok || h.pending >= h.maxPending || (h.maxSessions > 0 && len(h.sessions)+h.pending >= h.maxSessions) {
+	if _, ok := h.tuples[addr]; ok || !h.open() || h.pending >= h.maxPending || (h.maxSessions > 0 && len(h.sessions)+h.pending >= h.maxSessions) {
 		return nil, false
 	}
 	a := &attempt{token: token, ticketID: admission.TicketID(token), tuple: addr, first: first}

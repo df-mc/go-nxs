@@ -279,6 +279,60 @@ func TestProvider(t *testing.T) {
 	}
 }
 
+func TestPause(t *testing.T) {
+	f := newFakeProvider(t)
+	p, l, host := startProvider(t, f, Config{Diagnostics: true})
+	identity, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	s := &joinSignaling{answer: statelessAnswer(f, host, 42, identityBinding(&identity.PublicKey), nil)}
+	client, server := join(t, l, dialer(""), s)
+	defer client.Close()
+	defer server.Close()
+	waitFor(t, p.host.diagnosticsActive)
+
+	p.Pause()
+	waitFor(t, func() bool {
+		hb := f.lastHeartbeat()
+		return !hb.AcceptingPlayers && hb.PlayerCount != nil && hb.PlayerCount.ConnectedPlayers == 1
+	})
+	if p.host.diagnosticsActive() {
+		t.Fatal("diagnostics should be disabled while paused")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if c, err := dialer("").DialContext(ctx, "host", s); err == nil {
+		_ = c.Close()
+		t.Fatal("a paused host should not admit players")
+	}
+	if _, err := client.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	b := make([]byte, 5)
+	if _, err := io.ReadFull(server, b); err != nil || string(b) != "hello" {
+		t.Fatalf("read %q: %v", b, err)
+	}
+
+	p.Resume()
+	waitFor(t, func() bool { return f.lastHeartbeat().AcceptingPlayers && p.host.diagnosticsActive() })
+	c, sc := join(t, l, dialer(""), s)
+	_ = c.Close()
+	_ = sc.Close()
+
+	_ = p.Close()
+	p.Resume()
+	if p.host.accepting() {
+		t.Fatal("a closed host should not resume admitting players")
+	}
+}
+
+func TestPauseDiagnostics(t *testing.T) {
+	h := &host{}
+	h.pause()
+	h.setDiagnostics(&diagnosticPolicy{expires: time.Now().Add(time.Minute)})
+	if h.diagnosticsActive() {
+		t.Fatal("a paused host should not install a diagnostic policy")
+	}
+}
+
 func TestAssistedJoin(t *testing.T) {
 	f := newFakeProvider(t)
 	p, l, _ := startProvider(t, f, Config{AssistedJoins: true})
@@ -304,6 +358,15 @@ func TestAssistedJoin(t *testing.T) {
 			"offer": signal.Data,
 		})
 	}}
+	p.Pause()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if c, err := dialer("").DialContext(ctx, "host", s); err == nil {
+		_ = c.Close()
+		t.Fatal("a paused host should not admit assisted joins")
+	}
+	p.Resume()
+
 	client, server := join(t, l, dialer(""), s)
 	defer client.Close()
 	defer server.Close()
@@ -317,7 +380,6 @@ func TestAssistedJoin(t *testing.T) {
 	if server.VerifyPublicKey(&other.PublicKey) == nil {
 		t.Fatal("VerifyPublicKey should reject another identity")
 	}
-	_ = p
 }
 
 func TestDiagnostics(t *testing.T) {

@@ -113,7 +113,7 @@ func (p *Provider) exchange(ctx context.Context) (next, nextUpdate time.Time, ag
 		KeyRequestID:        st.KeyRequestID,
 		HostProfileRevision: p.profileRevision,
 	}
-	body.AcceptingPlayers = !p.closing.Load() && p.host.hasListener() && len(st.TicketKeys) > 0 && body.Capacity > 0
+	body.AcceptingPlayers = !p.closing.Load() && p.host.accepting() && p.host.hasListener() && len(st.TicketKeys) > 0 && body.Capacity > 0
 	if status != nil {
 		s := *status
 		body.ServerStatus = &s

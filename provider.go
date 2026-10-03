@@ -357,6 +357,19 @@ func (p *Provider) PongData(b []byte) {
 // Addr returns the local address of the gameplay socket.
 func (p *Provider) Addr() net.Addr { return p.host.Addr() }
 
+// Pause stops admitting players and reports this to the provider with the next heartbeat.
+// Established connections and admissions already in progress are not affected.
+func (p *Provider) Pause() {
+	p.host.pause()
+	p.poke()
+}
+
+// Resume admits players again after Pause.
+func (p *Provider) Resume() {
+	p.host.resume()
+	p.poke()
+}
+
 // Close stops accepting players, reports this to the provider and closes the gameplay
 // socket. Established connections are closed with it.
 func (p *Provider) Close() error {
@@ -364,7 +377,7 @@ func (p *Provider) Close() error {
 	p.once.Do(func() {
 		p.closing.Store(true)
 		p.authority.Store(nil)
-		p.host.setDiagnostics(nil)
+		p.host.stop()
 		p.stop()
 		<-p.done
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -385,7 +398,7 @@ func (p *Provider) Deregister(ctx context.Context) error {
 	err := net.ErrClosed
 	p.once.Do(func() {
 		p.closing.Store(true)
-		p.host.setDiagnostics(nil)
+		p.host.stop()
 		p.stop()
 		<-p.done
 		p.opMu.Lock()
